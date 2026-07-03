@@ -30,6 +30,7 @@ import type {
 import type { DesignTransform } from "@/lib/cart-store";
 import type { BasketPayload, CanvasViewerApi } from "@/lib/viewer-types";
 import { toteDataUrl } from "@/lib/bag-mockup";
+import { cn } from "@/lib/utils";
 
 type FabricModule = typeof import("fabric");
 
@@ -39,6 +40,12 @@ const MIN_PRINT = 60;
 interface CanvasViewerProps {
   product: ProductConfig;
   variant: Variant;
+  /**
+   * When false the canvas is a view-only preview: objects are locked and
+   * `touch-action` lets the page scroll (used to keep mobile scrollable until
+   * the shopper opts into editing). Defaults to true.
+   */
+  interactive?: boolean;
   onReady?: (api: CanvasViewerApi) => void;
   onDesignChange?: (hasDesign: boolean) => void;
 }
@@ -46,6 +53,7 @@ interface CanvasViewerProps {
 export default function CanvasViewer({
   product,
   variant,
+  interactive = true,
   onReady,
   onDesignChange,
 }: CanvasViewerProps) {
@@ -68,10 +76,12 @@ export default function CanvasViewer({
   const onReadyRef = useRef(onReady);
   const onDesignChangeRef = useRef(onDesignChange);
   const variantRef = useRef(variant);
+  const interactiveRef = useRef(interactive);
   useEffect(() => {
     onReadyRef.current = onReady;
     onDesignChangeRef.current = onDesignChange;
     variantRef.current = variant;
+    interactiveRef.current = interactive;
   });
 
   const [ready, setReady] = useState(false);
@@ -307,6 +317,8 @@ export default function CanvasViewer({
         scaleY: fit,
         angle: 0,
         objectCaching: false, // so the live-updated clip re-renders cleanly
+        selectable: interactiveRef.current,
+        evented: interactiveRef.current,
         borderColor: "#111827",
         cornerColor: "#ffffff",
         cornerStrokeColor: "#111827",
@@ -322,7 +334,7 @@ export default function CanvasViewer({
       obj.setCoords();
 
       canvas.add(obj); // added after the box -> design stays on top, box behind
-      canvas.setActiveObject(obj);
+      if (interactiveRef.current) canvas.setActiveObject(obj);
       designRef.current = obj;
       sourceRef.current = source;
       canvas.requestRenderAll();
@@ -579,6 +591,17 @@ export default function CanvasViewer({
     void applyVariant(variant);
   }, [variant, ready, applyVariant]);
 
+  // Lock/unlock the canvas: view-only (page can scroll on touch) vs. editable.
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || !ready) return;
+    canvas.skipTargetFind = !interactive;
+    boxRef.current?.set({ selectable: interactive, evented: interactive });
+    designRef.current?.set({ selectable: interactive, evented: interactive });
+    if (!interactive) canvas.discardActiveObject();
+    canvas.requestRenderAll();
+  }, [interactive, ready]);
+
   // Keyboard delete: only when the design (not the print box) is active.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -599,7 +622,12 @@ export default function CanvasViewer({
   return (
     <div
       ref={wrapperRef}
-      className="relative mx-auto aspect-square w-full max-w-[600px] touch-none overflow-hidden rounded-xl border bg-linear-to-b from-muted/40 to-muted/10"
+      className={cn(
+        // Cap the square by viewport height on mobile so it never fills the
+        // screen (leaving room to scroll); up to 600px on larger screens.
+        "relative mx-auto aspect-square w-full max-w-[min(600px,70svh)] overflow-hidden rounded-xl border bg-linear-to-b from-muted/40 to-muted/10",
+        interactive ? "touch-none" : "touch-pan-y",
+      )}
     >
       <canvas ref={canvasElRef} />
       {!ready && (

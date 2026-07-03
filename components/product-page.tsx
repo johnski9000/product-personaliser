@@ -1,8 +1,13 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import {
+  useCallback,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import dynamic from "next/dynamic";
-import { ImagePlus, RefreshCw, Trash2, Check } from "lucide-react";
+import { ImagePlus, RefreshCw, Trash2, Check, Lock, Pencil } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -21,7 +26,7 @@ import { cn } from "@/lib/utils";
 const CanvasViewer = dynamic(() => import("@/components/canvas-viewer"), {
   ssr: false,
   loading: () => (
-    <div className="mx-auto grid aspect-square w-full max-w-[600px] place-items-center rounded-xl border bg-muted/30 text-sm text-muted-foreground">
+    <div className="mx-auto grid aspect-square w-full max-w-[min(600px,70svh)] place-items-center rounded-xl border bg-muted/30 text-sm text-muted-foreground">
       Loading viewer…
     </div>
   ),
@@ -33,11 +38,27 @@ export default function ProductPage() {
   const [variantId, setVariantId] = useState<VariantId>(product.variants[0].id);
   const [hasDesign, setHasDesign] = useState(false);
   const [ready, setReady] = useState(false);
+  // null = follow the device default; true/false = shopper's explicit choice.
+  const [editOverride, setEditOverride] = useState<boolean | null>(null);
 
   const apiRef = useRef<CanvasViewerApi | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const selectedVariant = getVariant(product, variantId);
+
+  // Large (pointer) screens default to editable; touch/mobile defaults to a
+  // scrollable preview. Read via useSyncExternalStore so it's SSR-safe.
+  const subscribe = useCallback((cb: () => void) => {
+    const mq = window.matchMedia("(min-width: 1024px)");
+    mq.addEventListener("change", cb);
+    return () => mq.removeEventListener("change", cb);
+  }, []);
+  const isDesktop = useSyncExternalStore(
+    subscribe,
+    () => window.matchMedia("(min-width: 1024px)").matches,
+    () => false,
+  );
+  const editMode = editOverride ?? isDesktop;
 
   const handleReady = useCallback((api: CanvasViewerApi) => {
     apiRef.current = api;
@@ -53,6 +74,7 @@ export default function ProductPage() {
     // Reset so re-selecting the same file fires change again.
     e.target.value = "";
     if (!file) return;
+    setEditOverride(true); // so the just-uploaded design can be positioned
     await apiRef.current?.uploadDesign(file);
   };
 
@@ -88,18 +110,36 @@ export default function ProductPage() {
 
   return (
     <section className="mx-auto w-full max-w-6xl px-4 py-6 sm:py-10">
-      <div className="grid gap-8 lg:grid-cols-2 lg:gap-12">
+      <div className="grid grid-cols-1 gap-8 lg:grid-cols-2 lg:gap-12">
         {/* Viewer */}
         <div className="lg:sticky lg:top-24 lg:self-start">
+          {/* Mobile-only: opt into editing (page stays scrollable by default). */}
+          <div className="mb-3 lg:hidden">
+            <Button
+              type="button"
+              variant={editMode ? "default" : "outline"}
+              size="lg"
+              className="w-full"
+              aria-pressed={editMode}
+              onClick={() => setEditOverride(!editMode)}
+            >
+              {editMode ? <Lock /> : <Pencil />}
+              {editMode
+                ? "Lock canvas · scroll the page"
+                : "Edit design & print area"}
+            </Button>
+          </div>
           <CanvasViewer
             product={product}
             variant={selectedVariant}
+            interactive={editMode}
             onReady={handleReady}
             onDesignChange={setHasDesign}
           />
           <p className="mt-3 text-center text-xs text-muted-foreground">
-            Drag the dashed box to resize the print area · drag your design to
-            move, corners to scale, top handle to rotate · Delete to remove
+            {editMode
+              ? "Drag the dashed box to resize the print area · drag your design to move, corners to scale · Delete to remove"
+              : "Preview mode — scroll freely. Tap “Edit” to move your design or resize the print area."}
           </p>
         </div>
 

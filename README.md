@@ -76,6 +76,11 @@ Key behaviours:
 - **Responsive** — the canvas uses a fixed logical space (`canvasSize`, 600²) and
   a `ResizeObserver` scales the view (`setZoom`/`setDimensions`) down to mobile
   widths. All print‑area maths stay in logical units.
+- **Mobile‑friendly** — the canvas is capped by viewport height (`min(600px,
+  70svh)`) and, on touch screens, starts as a scrollable **preview** (objects
+  locked, `touch-action: pan-y` so the page scrolls). An on‑screen **Edit /
+  Lock** toggle opts into interaction; large (pointer) screens are editable by
+  default. Uploading a design also switches on Edit.
 
 ## Print area configuration (per product / variant)
 
